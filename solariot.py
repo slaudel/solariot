@@ -32,6 +32,11 @@ from threading import Thread
 from prometheus_client import start_http_server, Gauge
 
 import paho.mqtt.client as mqtt
+from ha_mqtt.mqtt_device_base import MqttDeviceSettings
+from ha_mqtt.mqtt_sensor import MqttSensor
+from ha_mqtt.mqtt_thermometer import MqttThermometer
+from ha_mqtt.ha_device import HaDevice
+from ha_mqtt.util import HaDeviceClass
 import datetime
 import requests
 import argparse
@@ -133,7 +138,13 @@ if hasattr(config, "mqtt_server"):
         mqtt_client.tls_set()
 
     mqtt_client.connect(config.mqtt_server, port=config.mqtt_port)
+    # mqtt_client.loop_start()
     logging.info("Configured MQTT Client")
+    if hasattr(config, "model"):
+        model_name = getattr(config, "model", "Sungrow")
+        model_serial = getattr(config, "serial", "serial")
+        ha_dev = HaDevice("Solar Inverter " + model_name, model_serial)
+
 else:
     mqtt_client = None
     logging.info("No MQTT configuration detected")
@@ -507,6 +518,42 @@ def publish_dweepy(inverter):
 
 
 def publish_mqtt(inverter):
+
+    for key in inverter.keys():
+        # print(key, ":", inverter[key])
+        i = {
+            "unit": "", 
+            "dev_class": HaDeviceClass.NONE
+        }
+        if (key == 'internal_temp'):
+            settings = MqttDeviceSettings("Interne Temperatur", key, mqtt_client, ha_dev)
+            th = MqttThermometer(settings, unit="°C")
+            th.publish_state(inverter[key])
+        else:
+            settings = MqttDeviceSettings(key, key, mqtt_client, ha_dev)
+            if ("voltage" in key):
+                i = {
+                    "unit": "V", 
+                    "dev_class": HaDeviceClass.VOLTAGE
+                }
+            elif ("energy" in key):
+                i = {
+                    "unit": "kWh", 
+                    "dev_class": HaDeviceClass.ENERGY
+                }
+            elif ("power" in key):
+                i = {
+                    "unit": "W", 
+                    "dev_class": HaDeviceClass.POWER
+                }
+            elif ("current" in key):
+                i = {
+                    "unit": "A", 
+                    "dev_class": HaDeviceClass.CURRENT
+                }
+            th = MqttSensor(settings, unit=i["unit"], device_class=i["dev_class"])
+            th.publish_state(inverter[key])
+
     # After a while you'll need to reconnect, so just reconnect before each publish
     mqtt_client.reconnect()
 
